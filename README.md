@@ -20,8 +20,8 @@ deadtime 15
 initdead 60
 keepalive 2
 
-ucast enp0s3 192.168.6.12
-ucast enp0s3 192.168.6.13
+ucast enp0s3 192.168.6.19
+ucast enp0s3 192.168.6.20
 
 auto_failback on
 
@@ -33,6 +33,11 @@ For all the servers to communicate, they need to have a known secret, so no one 
 ```
 auth1
 1 sha1 d1e6557e2fcb30ff8d4d3ae65b50345fa46a2faa
+```
+
+The keys are sensitive information so we need to secure them by changing the access rights so only the root user may access it.
+```
+chmod 600 /etc/ha.d/authkeys
 ```
 
 Lastly, in the heartbeat configuration, we need to tell the system what services it should keep track of. In this setup, we stay that vm1 is the primary host, and we want it to have the shared drive running, then the host is available.
@@ -148,3 +153,103 @@ Now you want to test that everything works. If the secondary system goes offline
 On the other hand, if the primary system goes down or if the heartbeat service shuts off. Then the secondary node will notice this and bring up the shared drive on that system. 
 
 If you ```tail -f /var/log/messages``` on the second VM and then run ```service heartbeat stop``` on the first VM, you can watch the handover. Depending on how high the load you have on your service, you might want to tweak the configuration parameters. This setup will handover the information after 2 seconds, but you might require a quicker handover.
+
+
+### Installing munin node
+
+For each node only add the munin node package.
+```
+apt install munin-node
+```
+
+Next you need to add the node configuration for each node in munin-node.conf
+```
+allow ^192\.168\.6\.20$
+host_name vm1
+host 192.168.6.20
+```
+
+```
+allow ^192\.168\.6\.20$
+host_name vm2
+host 192.168.6.19
+```
+
+We need to restart the munin node in order for the configuration to take place.
+```
+/etc/init.d/munin-node restart
+```
+
+### Installing munin collection server
+
+For the munin server you need to add both the apache, node and munin package.
+
+```
+apt install munin apache2
+```
+
+On the munin server you need to define which hosts are allowed in munin.conf
+```
+[vm1]
+    address 192.168.6.20
+[vm2]
+    address 192.168.6.19
+```
+
+Configure apache.
+```
+<VirtualHost *:80>
+    ServerName vm1.ea.org
+    ServerAlias vm1
+
+    ServerAdmin  info@example.org
+
+    DocumentRoot /var/www
+
+    Alias /munin/static/ /etc/munin/static/
+    <Directory /etc/munin/static>
+        Require all granted
+    </Directory>
+
+    Alias /munin /var/cache/munin/www
+    <Directory /var/cache/munin/www>
+        Require all granted
+    </Directory>
+
+    CustomLog /var/log/apache2/munin.example.org-access.log combined
+    ErrorLog  /var/log/apache2/munin.example.org-error.log
+</VirtualHost>
+```
+
+Restart services.
+```
+/etc/init.d/apache2 restart
+/etc/init.d/cron restart
+/etc/init.d/munin restart
+```
+
+### Adding extra plugins
+
+First we need to add our plugin to the plugins directory and make it executable.
+```
+cd /usr/share/munin/plugins
+vi drbd
+chmod +x drbd
+```
+
+Then we need to create a link in the configuration directory in order to enable the plugin.
+```
+cd /etc/munin/plugins
+ln -s /usr/share/munin/plugins/drbd
+```
+
+Next up we need to uptade the configuration file ```/etc/munin/plugin-conf.d/munin-node``` adding permissions for our plugin.
+```
+[drbd]
+user root
+```
+
+Lastly we restart the node for the configuration to take hold.
+```
+/etc/init.d/munin-node restart
+```

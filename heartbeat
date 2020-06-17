@@ -1,0 +1,23 @@
+#!/bin/bash
+
+param=$1
+
+if [ "config" == "$param" ] ; then
+    echo "graph_title heartbeat"
+    echo "graph_category heartbeat"
+    echo "graph_info Graph heartbeat"
+    echo "graph_vlabel Graph heartbeat"    
+    echo "heartbeat.label Running"
+    echo "heartbeat.critical 0.5:1.5"
+    echo "heartbeat.min 0"
+    echo "heartbeat.max 1"
+fi
+
+/etc/init.d/heartbeat status | grep '(running)' &> /dev/null
+if [ $? == 0 ]; then
+    echo "heartbeat.value 1"
+else 
+    echo "heartbeat.value 0"
+fi
+
+exit 0
